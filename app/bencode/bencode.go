@@ -2,6 +2,7 @@ package bencode
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 )
 
@@ -113,7 +114,7 @@ func decodeList(input []byte, start int) ([]any, int, error) {
 			if err != nil {
 				return nil, 0, err
 			}
-			res = append(res, string(val))
+			res = append(res, val) // keep as []byte
 			i = next
 		}
 	}
@@ -137,7 +138,7 @@ func decodeDictionary(input []byte, start int) (map[string]any, int, error) {
 		if err != nil {
 			return nil, 0, err
 		}
-		key := string(keyBytes)
+		key := string(keyBytes) // keys are always strings in Bencode
 		i = next
 
 		if i >= len(input) {
@@ -150,28 +151,28 @@ func decodeDictionary(input []byte, start int) (map[string]any, int, error) {
 			if err != nil {
 				return nil, 0, err
 			}
-			res[string(key)] = val
+			res[key] = val
 			i = next
 		case 'l':
 			val, next, err := decodeList(input, i)
 			if err != nil {
 				return nil, 0, err
 			}
-			res[string(key)] = val
+			res[key] = val
 			i = next
 		case 'd':
 			val, next, err := decodeDictionary(input, i)
 			if err != nil {
 				return nil, 0, err
 			}
-			res[string(key)] = val
+			res[key] = val
 			i = next
 		default:
 			val, next, err := decodeString(input, i)
 			if err != nil {
 				return nil, 0, err
 			}
-			res[string(key)] = string(val)
+			res[key] = val // keep as []byte
 			i = next
 		}
 	}
@@ -181,4 +182,67 @@ func decodeDictionary(input []byte, start int) (map[string]any, int, error) {
 	}
 
 	return res, i + 1, nil
+}
+
+type Encoder struct{}
+
+func NewEncoder() *Encoder {
+	return &Encoder{}
+}
+
+func (e *Encoder) Encode(input any) ([]byte, error) {
+	switch v := input.(type) {
+	case int:
+		return []byte(e.encodeInt(v)), nil
+	case string:
+		return []byte(e.encodeString([]byte(v))), nil
+	case []byte:
+		return []byte(e.encodeString(v)), nil
+	case []any:
+		return e.encodeList(v)
+	case map[string]any:
+		return e.encodeDict(v)
+	default:
+		return nil, fmt.Errorf("unsupported type: %T", v)
+	}
+}
+
+func (e *Encoder) encodeInt(i int) string {
+	return fmt.Sprintf("i%de", i)
+}
+
+func (e *Encoder) encodeString(b []byte) string {
+	return fmt.Sprintf("%d:%s", len(b), string(b))
+}
+
+func (e *Encoder) encodeList(list []any) ([]byte, error) {
+	result := []byte("l")
+	for _, item := range list {
+		encoded, err := e.Encode(item)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, encoded...)
+	}
+	result = append(result, 'e')
+	return result, nil
+}
+
+func (e *Encoder) encodeDict(dict map[string]any) ([]byte, error) {
+	result := []byte("d")
+	keys := make([]string, 0, len(dict))
+	for k := range dict {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		result = append(result, []byte(e.encodeString([]byte(k)))...)
+		encodedValue, err := e.Encode(dict[k])
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, encodedValue...)
+	}
+	result = append(result, 'e')
+	return result, nil
 }

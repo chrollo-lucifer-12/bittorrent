@@ -13,6 +13,7 @@ var _ = json.Marshal
 
 func main() {
 	decoder := bencode.NewDecoder()
+	encoder := bencode.NewEncoder()
 	command := os.Args[1]
 	if command == "decode" {
 		bencodedValue := os.Args[2]
@@ -29,10 +30,12 @@ func main() {
 		opts := metainfo.MetaInfoOpts{
 			Filename: filename,
 			Decoder:  decoder,
+			Encoder:  encoder,
 		}
 		metaInfo := metainfo.NewMetaInfo(opts)
-		parsedFile := metaInfo.Info()
-		fmt.Println(parsedFile)
+		metaInfo.Parse()
+		metaInfo.Hash()
+		fmt.Println(metaInfo.InfoHash)
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
