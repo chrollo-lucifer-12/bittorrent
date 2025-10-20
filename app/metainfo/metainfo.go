@@ -32,6 +32,7 @@ type MetaInfo struct {
 	encoder     *bencode.Encoder
 	TorrentFile *TorrentFile
 	InfoHash    string
+	PieceHashes string
 }
 
 func NewMetaInfo(opts MetaInfoOpts) *MetaInfo {
@@ -40,6 +41,12 @@ func NewMetaInfo(opts MetaInfoOpts) *MetaInfo {
 		decoder:  opts.Decoder,
 		encoder:  opts.Encoder,
 	}
+}
+
+func (m *MetaInfo) CalculatePieceHashes() {
+	pieces := m.TorrentFile.info.pieces.([]byte)
+	hashHex := fmt.Sprintf("%x", pieces)
+	m.PieceHashes = hashHex
 }
 
 func (m *MetaInfo) readFile() string {
