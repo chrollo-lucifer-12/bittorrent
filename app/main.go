@@ -7,6 +7,7 @@ import (
 
 	"github.com/codecrafters-io/bittorrent-starter-go/app/bencode"
 	"github.com/codecrafters-io/bittorrent-starter-go/app/metainfo"
+	"github.com/codecrafters-io/bittorrent-starter-go/app/p2p"
 )
 
 var _ = json.Marshal
@@ -33,10 +34,14 @@ func main() {
 			Encoder:  encoder,
 		}
 		metaInfo := metainfo.NewMetaInfo(opts)
-		metaInfo.Parse()
-		metaInfo.Hash()
-		metaInfo.CalculatePieceHashes()
-		metaInfo.DiscoverPeers()
+		tcpOpts := p2p.TCPConnectionOpts{
+			MetaInfo: metaInfo,
+		}
+		t := p2p.NewTCPConnection(tcpOpts)
+		err := t.ListenAndAccept()
+		if err != nil {
+			fmt.Println(err)
+		}
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)

@@ -40,7 +40,7 @@ type MetaInfo struct {
 	encoder     *bencode.Encoder
 	peerId      string
 	TorrentFile *TorrentFile
-	InfoHash    string
+	InfoHash    [20]byte
 	PieceHashes string
 }
 
@@ -56,6 +56,10 @@ func NewMetaInfo(opts MetaInfoOpts) *MetaInfo {
 	}
 }
 
+func (m *MetaInfo) GetPeerId() string {
+	return m.peerId
+}
+
 func (m *MetaInfo) CalculatePieceHashes() {
 	pieces := m.TorrentFile.info.pieces.([]byte)
 	hashHex := fmt.Sprintf("%x", pieces)
@@ -67,22 +71,13 @@ func (m *MetaInfo) readFile() string {
 	return string(data)
 }
 
-func (m *MetaInfo) DiscoverPeers() error {
-
-	info := make(map[string]any)
-	info["pieces"] = m.TorrentFile.info.pieces
-	info["length"] = m.TorrentFile.info.length
-	info["name"] = m.TorrentFile.info.name
-	info["piece length"] = m.TorrentFile.info.pieceLength
-	bencodedInfo, err := m.encoder.Encode(info)
-	if err != nil {
-		return err
-	}
-	hash := sha1.Sum(bencodedInfo)
-
+func (m *MetaInfo) DiscoverPeers() ([]string, error) {
+	var res []string
+	m.parse()
+	m.hash()
 	trackerURL := m.TorrentFile.announce
-	info_hash := hash[:]
-	peer_id := m.peerId
+	info_hash := m.InfoHash
+	peer_id := string(m.peerId)
 	port := "6881"
 	uploaded := "0"
 	downloaded := "0"
@@ -90,13 +85,14 @@ func (m *MetaInfo) DiscoverPeers() error {
 	compact := "1"
 	u, _ := url.Parse(trackerURL)
 	query := u.Query()
-	query.Set("info_hash", string(info_hash))
+	query.Set("info_hash", string(info_hash[:]))
 	query.Set("peer_id", string(peer_id))
 	query.Set("port", port)
 	query.Set("uploaded", uploaded)
 	query.Set("downloaded", downloaded)
 	query.Set("left", strconv.Itoa(left))
 	query.Set("compact", compact)
+
 	u.RawQuery = query.Encode()
 
 	resp, err := http.Get(u.String())
@@ -111,29 +107,28 @@ func (m *MetaInfo) DiscoverPeers() error {
 
 	decoded, err := m.decoder.Decode(body)
 	if err != nil {
-		return err
+		return res, err
 	}
 
 	dict := decoded.(map[string]any)
 	peersRaw, ok := dict["peers"].([]byte)
 	if !ok {
 		fmt.Println("No peers returned by tracker")
-		return nil
+		return res, nil
 	}
 
-	fmt.Println("Peers:")
 	for i := 0; i < len(peersRaw); i += 6 {
 		ip := net.IP(peersRaw[i : i+4])
 		port := binary.BigEndian.Uint16(peersRaw[i+4 : i+6])
-		fmt.Printf("%s:%d\n", ip, port)
+		res = append(res, fmt.Sprintf("%s:%d", ip, port))
 	}
 
-	return nil
+	return res, nil
 }
 
-func (m *MetaInfo) Hash() error {
+func (m *MetaInfo) hash() error {
 	if m.TorrentFile == nil {
-		err := m.Parse()
+		err := m.parse()
 		return err
 	}
 	info := make(map[string]any)
@@ -146,11 +141,11 @@ func (m *MetaInfo) Hash() error {
 		return err
 	}
 	hash := sha1.Sum(bencodedInfo)
-	m.InfoHash = fmt.Sprintf("%x", hash)
+	m.InfoHash = hash
 	return nil
 }
 
-func (m *MetaInfo) Parse() error {
+func (m *MetaInfo) parse() error {
 	data := m.readFile()
 	decodedDataAny, err := m.decoder.Decode([]byte(data))
 	if err != nil {
