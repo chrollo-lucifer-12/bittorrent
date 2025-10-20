@@ -36,7 +36,7 @@ func main() {
 		metaInfo.Parse()
 		metaInfo.Hash()
 		metaInfo.CalculatePieceHashes()
-		fmt.Println(metaInfo.PieceHashes)
+		metaInfo.DiscoverPeers()
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
