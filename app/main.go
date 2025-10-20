@@ -38,7 +38,7 @@ func main() {
 			MetaInfo: metaInfo,
 		}
 		t := p2p.NewTCPConnection(tcpOpts)
-		err := t.ListenAndAccept()
+		err := t.DownloadFile()
 		if err != nil {
 			fmt.Println(err)
 		}
@@ -46,4 +46,6 @@ func main() {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
 	}
+
+	select {}
 }

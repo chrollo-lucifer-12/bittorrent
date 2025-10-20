@@ -56,6 +56,14 @@ func NewMetaInfo(opts MetaInfoOpts) *MetaInfo {
 	}
 }
 
+func (m *MetaInfo) GetPieceLength() int {
+	return m.TorrentFile.info.pieceLength
+}
+
+func (m *MetaInfo) GetName() string {
+	return m.TorrentFile.info.name
+}
+
 func (m *MetaInfo) GetPeerId() string {
 	return m.peerId
 }
