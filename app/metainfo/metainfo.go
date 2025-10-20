@@ -41,7 +41,7 @@ type MetaInfo struct {
 	peerId      string
 	TorrentFile *TorrentFile
 	InfoHash    [20]byte
-	PieceHashes string
+	PieceHashes []byte
 }
 
 func NewMetaInfo(opts MetaInfoOpts) *MetaInfo {
@@ -56,6 +56,17 @@ func NewMetaInfo(opts MetaInfoOpts) *MetaInfo {
 	}
 }
 
+func (m *MetaInfo) GetNumPieces() int {
+	fileLength := m.GetLength()
+	pieceLength := m.GetPieceLength()
+	totalPieces := (fileLength + pieceLength - 1) / pieceLength
+	return totalPieces
+}
+
+func (m *MetaInfo) GetLength() int {
+	return m.TorrentFile.info.length
+}
+
 func (m *MetaInfo) GetPieceLength() int {
 	return m.TorrentFile.info.pieceLength
 }
@@ -68,10 +79,9 @@ func (m *MetaInfo) GetPeerId() string {
 	return m.peerId
 }
 
-func (m *MetaInfo) CalculatePieceHashes() {
+func (m *MetaInfo) calculatePieceHashes() {
 	pieces := m.TorrentFile.info.pieces.([]byte)
-	hashHex := fmt.Sprintf("%x", pieces)
-	m.PieceHashes = hashHex
+	m.PieceHashes = pieces
 }
 
 func (m *MetaInfo) readFile() string {
@@ -82,8 +92,8 @@ func (m *MetaInfo) readFile() string {
 func (m *MetaInfo) DiscoverPeers() ([]string, error) {
 	var res []string
 	m.parse()
-	fmt.Println(m.TorrentFile)
 	m.hash()
+	m.calculatePieceHashes()
 	trackerURL := m.TorrentFile.announce
 	info_hash := m.InfoHash
 	peer_id := string(m.peerId)

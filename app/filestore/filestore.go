@@ -44,10 +44,10 @@ func (f *FileStore) CombineFiles() {
 		filePath := filepath.Join(f.dirname, fileName)
 		fileData, _ := os.ReadFile(filePath)
 		b.Write(fileData)
-		os.Remove(filePath)
+		//	os.Remove(filePath)
 	}
 
-	filePath := filepath.Join(f.dirname, "sample.txt")
+	filePath := filepath.Join(f.dirname, f.dirname)
 	outFile, _ := os.Create(filePath)
 	outFile.Write(b.Bytes())
 	outFile.Close()

@@ -1,6 +1,8 @@
 package p2p
 
 import (
+	"bytes"
+	"crypto/sha1"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -13,7 +15,7 @@ import (
 	"github.com/codecrafters-io/bittorrent-starter-go/app/metainfo"
 )
 
-const BlockSize = 4 * 1024
+const BlockSize = 16 * 1024
 
 type TCPConnectionOpts struct {
 	MetaInfo *metainfo.MetaInfo
@@ -113,8 +115,19 @@ func receivePiece(conn net.Conn) (pieceIndex int, begin int, block []byte, err e
 	return pieceIndex, begin, block, nil
 }
 
+func (t *TCPConnection) validatePiece(pieceIndex int, data []byte) bool {
+	dataHash := sha1.Sum(data)
+	start := pieceIndex * 20
+	end := start + 20
+	expectedHash := t.MetaInfo.PieceHashes[start:end]
+
+	match := bytes.Equal(dataHash[:], expectedHash)
+	fmt.Printf("piece %d: expected %x, received %x, match: %v\n", pieceIndex, expectedHash, dataHash, match)
+	return match
+}
+
 func (t *TCPConnection) DialPeer(peer string) {
-	conn, _ := net.Dial("tcp", t.peers[0])
+	conn, _ := net.Dial("tcp", peer)
 	defer conn.Close()
 
 	t.handshake(conn)
@@ -143,42 +156,57 @@ func (t *TCPConnection) DialPeer(peer string) {
 
 	fileName := t.MetaInfo.GetName()
 	dirName := strings.Split(fileName, ".")[0]
-
 	fileStoreOpts := filestore.FileStoreOpts{
 		Dirname: dirName,
 	}
-
 	fileStore := filestore.NewFileStore(fileStoreOpts)
 
-	pieceLength := t.MetaInfo.GetPieceLength()
-	pieceIndex := 0
+	totalPieces := int(t.MetaInfo.GetNumPieces())
+	pieceLength := int(t.MetaInfo.GetPieceLength())
 
-	for begin := 0; begin < int(pieceLength); begin += BlockSize {
-		blockLen := BlockSize
-		if begin+BlockSize > int(pieceLength) {
-			blockLen = int(pieceLength) - begin
+	for pieceIndex := 0; pieceIndex < totalPieces; pieceIndex++ {
+		currentPieceLength := pieceLength
+		if pieceIndex == totalPieces-1 {
+			lastPieceSize := int(t.MetaInfo.GetLength()) - pieceLength*(totalPieces-1)
+			currentPieceLength = lastPieceSize
 		}
 
-		if err := sendRequest(conn, pieceIndex, begin, blockLen); err != nil {
-			log.Println("Failed to send request:", err)
-			return
+		pieceBuffer := make([]byte, currentPieceLength)
+		received := 0
+
+		for begin := 0; begin < currentPieceLength; begin += BlockSize {
+			blockLen := BlockSize
+			if begin+BlockSize > currentPieceLength {
+				blockLen = currentPieceLength - begin
+			}
+
+			if err := sendRequest(conn, pieceIndex, begin, blockLen); err != nil {
+				log.Println("Failed to send request:", err)
+				return
+			}
+
+			idx, b, block, err := receivePiece(conn)
+			if err != nil {
+				log.Println("Failed to receive piece:", err)
+				return
+			}
+
+			if idx != pieceIndex || b != begin {
+				log.Println("Received wrong piece or offset")
+				return
+			}
+
+			copy(pieceBuffer[b:b+len(block)], block)
+			received += len(block)
+			fmt.Printf("Received block at offset %d (length %d) for piece %d\n", b, len(block), pieceIndex)
 		}
 
-		idx, b, block, err := receivePiece(conn)
-		if err != nil {
-			log.Println("Failed to receive piece:", err)
-			return
+		if t.validatePiece(pieceIndex, pieceBuffer) {
+			fmt.Printf("Piece %d validated successfully!\n", pieceIndex)
+			fileStore.AddFile(fmt.Sprintf("piece_%d", pieceIndex), pieceBuffer)
+		} else {
+			fmt.Printf("Piece %d failed validation\n", pieceIndex)
 		}
-
-		if idx != pieceIndex || b != begin {
-			log.Println("Received wrong piece or offset")
-			return
-		}
-
-		fileName := fmt.Sprintf("piece_%d_block_%d", idx, b)
-		fileStore.AddFile(fileName, block)
-
-		fmt.Printf("Received block at offset %d (length %d)\n", b, len(block))
 	}
 
 	fileStore.CombineFiles()
