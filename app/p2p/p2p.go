@@ -180,4 +180,6 @@ func (t *TCPConnection) DialPeer(peer string) {
 
 		fmt.Printf("Received block at offset %d (length %d)\n", b, len(block))
 	}
+
+	fileStore.CombineFiles()
 }
