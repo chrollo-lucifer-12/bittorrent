@@ -11,11 +11,11 @@ import (
 var _ = json.Marshal
 
 func main() {
-	encoder := bencode.NewEncoder()
+	decoder := bencode.NewDecoder()
 	command := os.Args[1]
 	if command == "decode" {
 		bencodedValue := os.Args[2]
-		decodedValue, err := encoder.Encode(bencodedValue)
+		decodedValue, err := decoder.Decode(bencodedValue)
 		if err != nil {
 			fmt.Println(err)
 			return
