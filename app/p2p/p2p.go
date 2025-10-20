@@ -7,14 +7,13 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
-	"path/filepath"
 	"strings"
 
+	"github.com/codecrafters-io/bittorrent-starter-go/app/filestore"
 	"github.com/codecrafters-io/bittorrent-starter-go/app/metainfo"
 )
 
-const BlockSize = 16 * 1024
+const BlockSize = 4 * 1024
 
 type TCPConnectionOpts struct {
 	MetaInfo *metainfo.MetaInfo
@@ -111,30 +110,7 @@ func receivePiece(conn net.Conn) (pieceIndex int, begin int, block []byte, err e
 	pieceIndex = int(binary.BigEndian.Uint32(payload[0:4]))
 	begin = int(binary.BigEndian.Uint32(payload[4:8]))
 	block = payload[8:]
-	return
-}
-
-func (t *TCPConnection) bitfield(conn net.Conn) {
-	lengthBuf := make([]byte, 4)
-	_, err := conn.Read(lengthBuf)
-	if err != nil {
-		return
-	}
-
-	length := binary.BigEndian.Uint32(lengthBuf)
-	if length == 0 {
-		return
-	}
-
-	msgBuf := make([]byte, length)
-	_, err = conn.Read(msgBuf)
-	if err != nil {
-		return
-	}
-
-	messageID := msgBuf[0]
-
-	fmt.Println(messageID)
+	return pieceIndex, begin, block, nil
 }
 
 func (t *TCPConnection) DialPeer(peer string) {
@@ -167,14 +143,12 @@ func (t *TCPConnection) DialPeer(peer string) {
 
 	fileName := t.MetaInfo.GetName()
 	dirName := strings.Split(fileName, ".")[0]
-	os.Mkdir(dirName, os.ModePerm)
-	filePath := filepath.Join(dirName, fileName)
-	outFile, err := os.Create(filePath)
-	if err != nil {
-		log.Println("Failed to create file:", err)
-		return
+
+	fileStoreOpts := filestore.FileStoreOpts{
+		Dirname: dirName,
 	}
-	defer outFile.Close()
+
+	fileStore := filestore.NewFileStore(fileStoreOpts)
 
 	pieceLength := t.MetaInfo.GetPieceLength()
 	pieceIndex := 0
@@ -184,32 +158,26 @@ func (t *TCPConnection) DialPeer(peer string) {
 		if begin+BlockSize > int(pieceLength) {
 			blockLen = int(pieceLength) - begin
 		}
+
 		if err := sendRequest(conn, pieceIndex, begin, blockLen); err != nil {
 			log.Println("Failed to send request:", err)
 			return
 		}
-		fmt.Printf("Requested block at offset %d (length %d)\n", begin, blockLen)
-	}
 
-	//received := make([]byte, pieceLength)
-	receivedBytes := 0
-	for receivedBytes < int(pieceLength) {
-		idx, begin, block, err := receivePiece(conn)
+		idx, b, block, err := receivePiece(conn)
 		if err != nil {
 			log.Println("Failed to receive piece:", err)
 			return
 		}
-		if idx != pieceIndex {
-			continue
-		}
-		_, err = outFile.WriteAt(block, int64(begin))
-		if err != nil {
-			log.Println("Failed to write block to file:", err)
+
+		if idx != pieceIndex || b != begin {
+			log.Println("Received wrong piece or offset")
 			return
 		}
-		receivedBytes += len(block)
-		fmt.Printf("Received block at offset %d (length %d)\n", begin, len(block))
-	}
 
-	fmt.Println("Piece downloaded successfully")
+		fileName := fmt.Sprintf("piece_%d_block_%d", idx, b)
+		fileStore.AddFile(fileName, block)
+
+		fmt.Printf("Received block at offset %d (length %d)\n", b, len(block))
+	}
 }

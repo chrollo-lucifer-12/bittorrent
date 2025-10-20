@@ -82,6 +82,7 @@ func (m *MetaInfo) readFile() string {
 func (m *MetaInfo) DiscoverPeers() ([]string, error) {
 	var res []string
 	m.parse()
+	fmt.Println(m.TorrentFile)
 	m.hash()
 	trackerURL := m.TorrentFile.announce
 	info_hash := m.InfoHash
@@ -155,6 +156,7 @@ func (m *MetaInfo) hash() error {
 
 func (m *MetaInfo) parse() error {
 	data := m.readFile()
+
 	decodedDataAny, err := m.decoder.Decode([]byte(data))
 	if err != nil {
 		return err
@@ -184,7 +186,7 @@ func (m *MetaInfo) parse() error {
 	if !ok {
 		return fmt.Errorf("info field not a dictionary")
 	}
-
+	fmt.Println(infoMap)
 	lengthVal, ok := infoMap["length"]
 	if !ok {
 		return fmt.Errorf("length field missing")
