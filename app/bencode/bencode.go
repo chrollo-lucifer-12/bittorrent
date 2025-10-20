@@ -3,195 +3,182 @@ package bencode
 import (
 	"fmt"
 	"strconv"
-	"unicode"
 )
 
-type Decoder struct {
-}
+type Decoder struct{}
 
 func NewDecoder() *Decoder {
 	return &Decoder{}
 }
 
-func (d *Decoder) getType(input string) string {
-	if unicode.IsDigit(rune(input[0])) {
-		return "string"
-	} else if input[0] == 'i' {
-		return "integer"
-	} else if input[0] == 'l' {
-		return "list"
-	} else if input[0] == 'd' {
-		return "dictionary"
+func (d *Decoder) Decode(input []byte) (any, error) {
+	if len(input) == 0 {
+		return nil, fmt.Errorf("empty input")
 	}
-	return ""
+
+	switch input[0] {
+	case 'i':
+		val, _, err := decodeInteger(input, 0)
+		return val, err
+	case 'l':
+		val, _, err := decodeList(input, 0)
+		return val, err
+	case 'd':
+		val, _, err := decodeDictionary(input, 0)
+		return val, err
+	default:
+		val, _, err := decodeString(input, 0)
+		return val, err
+	}
 }
 
-func (d *Decoder) Decode(input string) (any, error) {
-	var res any
-	if d.getType(input) == "string" {
-		res = d.decodeString(input)
-	} else if d.getType(input) == "integer" {
-		res = d.decodeInteger(input)
-	} else if d.getType(input) == "list" {
-		res = d.decodeList(input)
-	} else if d.getType(input) == "dictionary" {
-		res = d.decodeDictionary(input)
-	} else {
-		return "", fmt.Errorf("Only strings and integers are supported at the moment")
-	}
-	return res, nil
-}
-
-func (d *Decoder) decodeString(input string) string {
-	firstColonIndex := -1
-	for i, v := range input {
-		if v == ':' {
-			firstColonIndex = i
+func decodeString(input []byte, start int) ([]byte, int, error) {
+	colon := start
+	for ; colon < len(input); colon++ {
+		if input[colon] == ':' {
 			break
 		}
 	}
-	return input[firstColonIndex+1:]
-}
-
-func (d *Decoder) decodeInteger(input string) int {
-	length := len(input)
-	resStr := input[1 : length-1]
-	res, _ := strconv.Atoi(resStr)
-	return res
-}
-
-func (d *Decoder) decodeList(input string) []any {
-	var result []any
-	i := 1
-
-	for i < len(input)-1 {
-		switch {
-		case unicode.IsDigit(rune(input[i])):
-			colonIndex := i
-			for ; colonIndex < len(input); colonIndex++ {
-				if input[colonIndex] == ':' {
-					break
-				}
-			}
-			length, _ := strconv.Atoi(input[i:colonIndex])
-			start := colonIndex + 1
-			end := start + length
-			result = append(result, input[start:end])
-			i = end
-
-		case input[i] == 'i':
-			endIndex := i + 1
-			for ; endIndex < len(input); endIndex++ {
-				if input[endIndex] == 'e' {
-					break
-				}
-			}
-			num, _ := strconv.Atoi(input[i+1 : endIndex])
-			result = append(result, num)
-			i = endIndex + 1
-
-		case input[i] == 'l':
-			subStart := i
-			depth := 1
-			j := i + 1
-			for ; j < len(input); j++ {
-				if input[j] == 'l' {
-					depth++
-				} else if input[j] == 'e' {
-					depth--
-					if depth == 0 {
-						break
-					}
-				}
-			}
-			sublist := d.decodeList(input[subStart : j+1])
-			result = append(result, sublist)
-			i = j + 1
-
-		default:
-			i++
-		}
+	if colon == len(input) {
+		return nil, 0, fmt.Errorf("colon not found in string field")
 	}
 
-	return result
+	length, err := strconv.Atoi(string(input[start:colon]))
+	if err != nil {
+		return nil, 0, err
+	}
+
+	dataStart := colon + 1
+	dataEnd := dataStart + length
+	if dataEnd > len(input) {
+		return nil, 0, fmt.Errorf("unexpected end of input for string")
+	}
+
+	return input[dataStart:dataEnd], dataEnd, nil
 }
 
-func (d *Decoder) decodeDictionary(input string) map[string]any {
-	res := make(map[string]any)
-	i := 1
-
-	for i < len(input) && input[i] != 'e' {
-		colonIndex := i
-		for ; colonIndex < len(input); colonIndex++ {
-			if input[colonIndex] == ':' {
-				break
-			}
+func decodeInteger(input []byte, start int) (int, int, error) {
+	if input[start] != 'i' {
+		return 0, 0, fmt.Errorf("expected 'i' at start of integer")
+	}
+	end := start + 1
+	for ; end < len(input); end++ {
+		if input[end] == 'e' {
+			break
 		}
-		length, _ := strconv.Atoi(input[i:colonIndex])
-		start := colonIndex + 1
-		end := start + length
-		key := input[start:end]
-		i = end
+	}
+	if end == len(input) {
+		return 0, 0, fmt.Errorf("unterminated integer")
+	}
+
+	val, err := strconv.Atoi(string(input[start+1 : end]))
+	if err != nil {
+		return 0, 0, err
+	}
+	return val, end + 1, nil
+}
+
+func decodeList(input []byte, start int) ([]any, int, error) {
+	if input[start] != 'l' {
+		return nil, 0, fmt.Errorf("expected 'l' at start of list")
+	}
+
+	var res []any
+	i := start + 1
+	for i < len(input) && input[i] != 'e' {
 		switch input[i] {
 		case 'i':
-			endIndex := i + 1
-			for ; endIndex < len(input); endIndex++ {
-				if input[endIndex] == 'e' {
-					break
-				}
+			val, next, err := decodeInteger(input, i)
+			if err != nil {
+				return nil, 0, err
 			}
-			num, _ := strconv.Atoi(input[i+1 : endIndex])
-			res[key] = num
-			i = endIndex + 1
-
+			res = append(res, val)
+			i = next
 		case 'l':
-			startIndex := i
-			depth := 1
-			j := i + 1
-			for ; j < len(input); j++ {
-				if input[j] == 'l' {
-					depth++
-				} else if input[j] == 'e' {
-					depth--
-					if depth == 0 {
-						break
-					}
-				}
+			val, next, err := decodeList(input, i)
+			if err != nil {
+				return nil, 0, err
 			}
-			res[key] = d.decodeList(input[startIndex : j+1])
-			i = j + 1
-
+			res = append(res, val)
+			i = next
 		case 'd':
-			startIndex := i
-			depth := 1
-			j := i + 1
-			for ; j < len(input); j++ {
-				if input[j] == 'd' {
-					depth++
-				} else if input[j] == 'e' {
-					depth--
-					if depth == 0 {
-						break
-					}
-				}
+			val, next, err := decodeDictionary(input, i)
+			if err != nil {
+				return nil, 0, err
 			}
-			res[key] = d.decodeDictionary(input[startIndex : j+1])
-			i = j + 1
-
+			res = append(res, val)
+			i = next
 		default:
-			colonIndex := i
-			for ; colonIndex < len(input); colonIndex++ {
-				if input[colonIndex] == ':' {
-					break
-				}
+			val, next, err := decodeString(input, i)
+			if err != nil {
+				return nil, 0, err
 			}
-			length, _ := strconv.Atoi(input[i:colonIndex])
-			start := colonIndex + 1
-			end := start + length
-			res[key] = input[start:end]
-			i = end
+			res = append(res, string(val))
+			i = next
 		}
 	}
 
-	return res
+	if i >= len(input) {
+		return nil, 0, fmt.Errorf("unterminated list")
+	}
+
+	return res, i + 1, nil
+}
+
+func decodeDictionary(input []byte, start int) (map[string]any, int, error) {
+	if input[start] != 'd' {
+		return nil, 0, fmt.Errorf("expected 'd' at start of dictionary")
+	}
+
+	res := make(map[string]any)
+	i := start + 1
+	for i < len(input) && input[i] != 'e' {
+		keyBytes, next, err := decodeString(input, i)
+		if err != nil {
+			return nil, 0, err
+		}
+		key := string(keyBytes)
+		i = next
+
+		if i >= len(input) {
+			return nil, 0, fmt.Errorf("unexpected end of dictionary")
+		}
+
+		switch input[i] {
+		case 'i':
+			val, next, err := decodeInteger(input, i)
+			if err != nil {
+				return nil, 0, err
+			}
+			res[string(key)] = val
+			i = next
+		case 'l':
+			val, next, err := decodeList(input, i)
+			if err != nil {
+				return nil, 0, err
+			}
+			res[string(key)] = val
+			i = next
+		case 'd':
+			val, next, err := decodeDictionary(input, i)
+			if err != nil {
+				return nil, 0, err
+			}
+			res[string(key)] = val
+			i = next
+		default:
+			val, next, err := decodeString(input, i)
+			if err != nil {
+				return nil, 0, err
+			}
+			res[string(key)] = string(val)
+			i = next
+		}
+	}
+
+	if i >= len(input) {
+		return nil, 0, fmt.Errorf("unterminated dictionary")
+	}
+
+	return res, i + 1, nil
 }
