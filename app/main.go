@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/codecrafters-io/bittorrent-starter-go/app/bencode"
+	"github.com/codecrafters-io/bittorrent-starter-go/app/magnetlink"
 	"github.com/codecrafters-io/bittorrent-starter-go/app/metainfo"
 	"github.com/codecrafters-io/bittorrent-starter-go/app/p2p"
 )
@@ -42,10 +43,21 @@ func main() {
 		if err != nil {
 			fmt.Println(err)
 		}
+	} else if command == "magnet_parse" {
+		magnetLink := os.Args[2]
+		opts := magnetlink.MagnetLinkOpts{
+			MagnetLink: magnetLink,
+		}
+		magnetLinkHandler := magnetlink.NewMagentLink(opts)
+		info, err := magnetLinkHandler.Parse()
+		if err != nil {
+			fmt.Printf("error in parsing : %s\n", err)
+		}
+		fmt.Println("parsed info : ", info)
 	} else {
 		fmt.Println("Unknown command: " + command)
 		os.Exit(1)
 	}
 
-	select {}
+	// select {}
 }

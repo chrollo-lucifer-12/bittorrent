@@ -179,26 +179,18 @@ func (t *TCPConnection) DialPeer(peer string) {
 			if begin+BlockSize > currentPieceLength {
 				blockLen = currentPieceLength - begin
 			}
-
 			if err := sendRequest(conn, pieceIndex, begin, blockLen); err != nil {
-				log.Println("Failed to send request:", err)
 				return
 			}
-
 			idx, b, block, err := receivePiece(conn)
 			if err != nil {
-				log.Println("Failed to receive piece:", err)
 				return
 			}
-
 			if idx != pieceIndex || b != begin {
-				log.Println("Received wrong piece or offset")
 				return
 			}
-
 			copy(pieceBuffer[b:b+len(block)], block)
 			received += len(block)
-			fmt.Printf("Received block at offset %d (length %d) for piece %d\n", b, len(block), pieceIndex)
 		}
 
 		if t.validatePiece(pieceIndex, pieceBuffer) {
