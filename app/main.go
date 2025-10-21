@@ -35,8 +35,18 @@ func main() {
 			Encoder:  encoder,
 		}
 		metaInfo := metainfo.NewMetaInfo(opts)
+
 		tcpOpts := p2p.TCPConnectionOpts{
 			MetaInfo: metaInfo,
+			MetaInfoDownloadFunc: func(t *p2p.TCPConnection) error {
+				var err error
+				peers, err := t.MetaInfo.DiscoverPeers()
+				if err != nil || len(peers) == 0 {
+					return err
+				}
+				go t.DialPeer(peers[0])
+				return nil
+			},
 		}
 		t := p2p.NewTCPConnection(tcpOpts)
 		err := t.DownloadFile()
@@ -59,5 +69,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	// select {}
+	select {}
 }
